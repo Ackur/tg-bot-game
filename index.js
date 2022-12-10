@@ -1,8 +1,8 @@
-const TelegramBot = require("node-telegram-bot-api");
+const { Telegraf } = require("telegraf");
 
 const token = "5916747010:AAH5GA5HQ4wnvjVvUcI9kM4wAjH4bUGdb3Y";
 
-const bot = new TelegramBot(token, { polling: true });
+const bot = new Telegraf(token);
 
 const chats = {};
 
@@ -35,76 +35,87 @@ const gameAgeinQuestion = {
   }),
 };
 
-const startGame = async (chatId) => {
+const startGame = async (ctx, chatId) => {
   const randomNumber = Math.floor(Math.random() * 10);
   chats[chatId] = randomNumber;
-  await bot.sendMessage(
-    chatId,
+  await ctx.reply(
     "Зараз я загадаю цифру від 0 до 9, а ти спробуеш її відгатади"
   );
 
-  await bot.sendMessage(chatId, "Відгадуй:", gameOptions);
+  await ctx.reply("Відгадуй:", gameOptions);
 };
 
 const start = () => {
-  bot.setMyCommands([
+  bot.telegram.setMyCommands([
     { command: "/start", description: "Welcome" },
     { command: "/info", description: "Read info!" },
     { command: "/game", description: "Game, guess the number" },
   ]);
 
-  bot.on("message", async (msg) => {
-    console.log(msg);
-    const text = msg.text;
-    const chatId = msg.chat.id;
+  // bot.start((ctx) => ctx.reply("Welcome"));
+
+  bot.on("message", async (ctx) => {
+    console.log('=======================================================', ctx);
+    const text = ctx.message.text;
+    const chatId = ctx.message.chat.id;
 
     if (text === "/start") {
-      return bot.sendMessage(
-        chatId,
-        `Welcome ${msg.from.username}, nice to meet you!`
-      );
+      return ctx.reply(`Welcome ${ctx.from.username}, nice to meet you!`);
     }
 
     if (text === "/info") {
-      return bot.sendMessage(
-        chatId,
-        `Your name is ${msg.from.first_name} and your username is ${msg.from.username}`
+      return ctx.reply(
+        `Your name is ${ctx.from.first_name} and your username is ${ctx.from.username}`
       );
     }
 
     if (text === "/game") {
-      return startGame(chatId);
+      return startGame(ctx, chatId);
     }
 
-    bot.sendMessage(chatId, "I`m dont understand you, please try again!");
+    ctx.reply("I`m dont understand you, please try again!");
   });
 
-  bot.on("callback_query", (msg) => {
-    const data = msg.data;
-    const chatId = msg.message.chat.id;
+  bot.on("callback_query", async (ctx) => {
+    const data = ctx.update.callback_query.data;
+    const chatId = ctx.chat.id;
 
-    console.log(msg);
+    console.log('=======================================================', ctx);
 
     if (data === "/again") {
-      return startGame(chatId);
+      await ctx.editMessageReplyMarkup(
+        {
+          inline_keyboard: [],
+        },
+        {
+          chat_id: chatId,
+          message_id: ctx.message_id,
+        }
+      );
+      return startGame(ctx, chatId);
     }
 
     if (+data === +chats[chatId]) {
-      return bot.sendMessage(
-        chatId,
+      await ctx.reply(
         `Вітаю ти відгадав цифру ${chats[chatId]}`,
         gameAgeinQuestion
       );
     } else {
-      bot.sendMessage(
-        chatId,
-        `Ти не відгадав цифру яку загадав БОТ "${chats[chatId]}"`,
+      await ctx.reply(`Ти обрав цифру ${data}`);
+
+      await ctx.reply(
+        `БОТ загадав цифру: "${chats[chatId]}"`,
         gameAgeinQuestion
       );
     }
-
-    bot.sendMessage(chatId, `Ти обрав цифру ${data}`);
+    await ctx.deleteMessage(ctx.message_id);
   });
+
+  bot.launch();
+
+  // Enable graceful stop
+  process.once("SIGINT", () => bot.stop("SIGINT"));
+  process.once("SIGTERM", () => bot.stop("SIGTERM"));
 };
 
 start();
