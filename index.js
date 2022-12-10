@@ -1,5 +1,6 @@
-const { Telegraf } = require("telegraf");
-require('dotenv').config()
+const { Telegraf, Scenes, session } = require("telegraf");
+const { GenAgeScene, GenNameScene } = require("./Scenes");
+require("dotenv").config();
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
@@ -28,7 +29,7 @@ const gameOptions = {
   }),
 };
 
-const gameAgeinQuestion = {
+const gameAgainQuestion = {
   reply_markup: JSON.stringify({
     inline_keyboard: [[{ text: "play again", callback_data: "/again" }]],
   }),
@@ -44,67 +45,102 @@ const startGame = async (ctx, chatId) => {
   await ctx.reply("Відгадуй:", gameOptions);
 };
 
+/**
+ * Функция для отправки сообщения ботом
+ * @param {String} actionName Идентификатор кнопки для обработки
+ * @param {String} imgSrc Путь к изображению, или false чтобы отправить только текст
+ * @param {String} text Текстовое сообщение для отправки
+ * @param {Boolean} preview Блокировать превью у ссылок или нет, true - блокировать, false - нет
+ */
+function addBotAction({ actionName, imgSrc, text, preview = false, callback }) {
+  bot.action(actionName, async (ctx) => {
+    try {
+      await ctx.answerCbQuery();
+      imgSrc &&
+        (await ctx.replyWithPhoto({
+          source: imgSrc,
+        }));
+      text &&
+        (await ctx.replyWithHTML(text, {
+          disable_web_page_preview: preview,
+        }));
+      callback && callback();
+    } catch (e) {
+      console.error(e);
+    }
+  });
+}
+
 const start = () => {
   bot.telegram.setMyCommands([
     { command: "/start", description: "Welcome" },
     { command: "/info", description: "Read info!" },
     { command: "/game", description: "Game, guess the number" },
+    { command: "/scenes", description: "test scenes" },
   ]);
 
-  // bot.start((ctx) => ctx.reply("Welcome"));
+  const stage = new Scenes.Stage([GenAgeScene(), GenNameScene()]);
+
+  bot.use(session());
+  bot.use(stage.middleware());
+
+  bot.start((ctx) =>
+    ctx.reply(`Welcome ${ctx.from.username}, nice to meet you!`)
+  );
+
+  bot.command("scenes", async (ctx) => {
+    ctx.scene.enter("age");
+  });
+
+  bot.command("info", async (ctx) => {
+    ctx.reply(
+      `Your name is ${ctx.from.first_name} and your username is ${ctx.from.username}`
+    );
+  });
+
+  bot.command("game", async (ctx) => {
+    const chatId = ctx.message.chat.id;
+    startGame(ctx, chatId);
+  });
 
   bot.on("message", async (ctx) => {
-    console.log('=======================================================', ctx);
-    const text = ctx.message.text;
-    const chatId = ctx.message.chat.id;
-
-    if (text === "/start") {
-      return ctx.reply(`Welcome ${ctx.from.username}, nice to meet you!`);
-    }
-
-    if (text === "/info") {
-      return ctx.reply(
-        `Your name is ${ctx.from.first_name} and your username is ${ctx.from.username}`
-      );
-    }
-
-    if (text === "/game") {
-      return startGame(ctx, chatId);
-    }
-
     ctx.reply("I`m dont understand you, please try again!");
+  });
+
+  bot.action("/again", async (ctx) => {
+    const chatId = ctx.chat.id;
+    await ctx.editMessageReplyMarkup(
+      {
+        inline_keyboard: [],
+      },
+      {
+        chat_id: chatId,
+        message_id: ctx.message_id,
+      }
+    );
+    return startGame(ctx, chatId);
   });
 
   bot.on("callback_query", async (ctx) => {
     const data = ctx.update.callback_query.data;
     const chatId = ctx.chat.id;
 
-    console.log('=======================================================', ctx);
-
-    if (data === "/again") {
-      await ctx.editMessageReplyMarkup(
-        {
-          inline_keyboard: [],
-        },
-        {
-          chat_id: chatId,
-          message_id: ctx.message_id,
-        }
-      );
-      return startGame(ctx, chatId);
-    }
+    console.log(
+      "==========================callback_query=============================",
+      ctx
+    );
 
     if (+data === +chats[chatId]) {
       await ctx.reply(
         `Вітаю ти відгадав цифру ${chats[chatId]}`,
-        gameAgeinQuestion
+        gameAgainQuestion
       );
     } else {
       await ctx.reply(`Ти обрав цифру ${data}`);
 
       await ctx.reply(
         `БОТ загадав цифру: "${chats[chatId]}"`,
-        gameAgeinQuestion
+        gameAgainQuestion
       );
     }
     await ctx.deleteMessage(ctx.message_id);
